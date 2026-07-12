@@ -1,0 +1,2193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>坦克对战 - 联机版</title>
+<script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; touch-action: none; }
+body { background: #1a1a2e; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; font-family: Arial, sans-serif; overflow: hidden; }
+#gameCanvas { border: 3px solid #4a4a6a; background: #0f0f1a; max-width: 100vw; max-height: 50vh; cursor: crosshair; position: relative; }
+#ui { color: #fff; text-align: center; margin: 3px 0; font-size: 13px; }
+#score { font-size: 14px; margin-bottom: 2px; }
+#levelInfo { color: #f39c12; font-weight: bold; margin-bottom: 2px; }
+#controls { display: flex; justify-content: space-between; align-items: center; width: 100%; max-width: 420px; padding: 0 15px; margin-top: 5px; }
+#joystick { width: 100px; height: 100px; border-radius: 50%; border: 3px solid #4a90d9; background: rgba(74, 144, 217, 0.2); position: relative; touch-action: none; }
+#joystickKnob { width: 40px; height: 40px; border-radius: 50%; background: #4a90d9; position: absolute; left: 30px; top: 30px; touch-action: none; }
+.btn { border: none; cursor: pointer; user-select: none; -webkit-user-select: none; transition: transform 0.1s; border-radius: 50%; }
+.btn:active, .btn.active { transform: scale(0.95); opacity: 0.8; }
+.btn-fire { background: #e74c3c; color: white; font-size: 16px; width: 70px; height: 70px; }
+.btn-auto { background: #2ecc71; color: white; font-size: 22px; width: 60px; height: 60px; line-height: 60px; text-align: center; }
+.btn-auto.off { background: #555; color: #999; }
+#rightBtns { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+
+#startScreen, #gameOverScreen, #levelCompleteScreen, #levelSelectScreen, #shopScreen {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.9); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; color: white; z-index: 100;
+}
+#gameOverScreen, #levelCompleteScreen, #levelSelectScreen, #shopScreen { display: none; }
+.title { font-size: 28px; margin-bottom: 12px; color: #4a90d9; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
+.btn-start { padding: 10px 30px; font-size: 16px; background: #4a90d9; color: white; border: none; border-radius: 8px; cursor: pointer; margin: 6px; }
+.btn-start:hover { background: #357abd; }
+.btn-start.small { padding: 6px 18px; font-size: 13px; margin: 4px; }
+.btn-start.green { background: #27ae60; }
+.btn-start.green:hover { background: #1e8449; }
+.btn-start.orange { background: #e67e22; }
+.btn-start.orange:hover { background: #ca6f1e; }
+.btn-start.purple { background: #8e44ad; }
+.btn-start.purple:hover { background: #7d3c98; }
+.level-grid { display: grid; grid-template-columns: repeat(5, 60px); gap: 10px; margin: 15px 0; }
+.level-btn { width: 60px; height: 60px; border-radius: 8px; border: 2px solid #4a90d9; background: #2c3e50; color: white; font-size: 18px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
+.level-btn:hover { background: #4a90d9; }
+.level-btn.boss { border-color: #e74c3c; background: #c0392b; }
+.level-btn.boss:hover { background: #e74c3c; }
+.level-btn.locked { background: #555; border-color: #333; }
+#playerNameInput { background: #2c3e50; color: white; }
+#playerNameInput::placeholder { color: #888; }
+.instructions { margin-top: 12px; text-align: center; color: #aaa; font-size: 12px; padding: 0 15px; }
+.instructions p { margin: 2px 0; }
+.level-stats { font-size: 14px; color: #ddd; margin: 8px 0; }
+#versionInfo { position: fixed; bottom: 5px; right: 10px; color: #666; font-size: 10px; z-index: 1000; }
+
+#backpackBtn {
+    position: fixed; bottom: 80px; right: 20px;
+    padding: 8px 14px; border-radius: 20px;
+    background: #f39c12; border: 2px solid #e67e22;
+    color: white; font-size: 18px; font-weight: bold;
+    cursor: pointer; z-index: 50; display: none;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+}
+#backpackBtn.active { background: #e67e22; transform: scale(0.95); }
+
+.save-manage { display: flex; align-items: center; gap: 10px; margin: 8px 0 6px 0; flex-wrap: wrap; justify-content: center; }
+.save-manage label { color: #aaa; font-size: 13px; margin-right: 4px; }
+.save-manage .btn-start { padding: 5px 18px; font-size: 13px; margin: 2px; }
+.save-manage .btn-start.export-btn { background: #27ae60; }
+.save-manage .btn-start.export-btn:hover { background: #1e8449; }
+.save-manage .btn-start.import-btn { background: #2980b9; }
+.save-manage .btn-start.import-btn:hover { background: #1f618d; }
+#importFileInput { display: none; }
+
+#survivalExitBtn {
+    position: absolute; top: 10px; left: 10px;
+    padding: 6px 14px; font-size: 14px; background: rgba(231,76,60,0.8); color: white;
+    border: none; border-radius: 6px; cursor: pointer; z-index: 200; display: none;
+}
+#survivalExitBtn:hover { background: rgba(231,76,60,1); }
+
+.shop-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 90%;
+    max-width: 350px;
+    margin: 10px 0;
+}
+.shop-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(255,255,255,0.05);
+    padding: 8px 15px;
+    border-radius: 8px;
+    border: 1px solid #555;
+}
+.shop-item .info { text-align: left; }
+.shop-item .info .name { font-weight: bold; font-size: 16px; }
+.shop-item .info .desc { font-size: 12px; color: #aaa; }
+.shop-item .price { color: #f1c40f; font-weight: bold; }
+.shop-item .buy-btn {
+    background: #27ae60;
+    border: none;
+    color: white;
+    padding: 4px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+}
+.shop-item .buy-btn:disabled {
+    background: #555;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+.shop-item .buy-btn:hover:not(:disabled) { background: #2ecc71; }
+#shopCoins { color: #f1c40f; font-size: 20px; margin-bottom: 8px; }
+
+#onlineStatus {
+    font-size: 14px;
+    color: #aaa;
+    margin: 4px 0;
+}
+</style>
+</head>
+<body>
+<div id="ui">
+    <div id="levelInfo">关卡 1</div>
+    <div id="score">💰 <span id="coinDisplay">0</span> | 玩家: <span id="playerScore">0</span> | 队友: <span id="allyScore">0</span> | 敌人: <span id="enemyScore">0</span></div>
+    <div id="onlineStatus">🔌 未连接</div>
+</div>
+<canvas id="gameCanvas"></canvas>
+<div id="controls">
+    <div id="joystick"><div id="joystickKnob"></div></div>
+    <div id="rightBtns">
+        <button class="btn btn-fire" id="btnFire">🔥</button>
+        <button class="btn btn-auto off" id="autoAimBtn">🎯</button>
+    </div>
+</div>
+<button id="backpackBtn" onclick="showPlaceHint()">📦 0</button>
+<button id="survivalExitBtn" onclick="exitSurvivalMode()">✕ 退出</button>
+<div id="versionInfo">v2.0 - 联机版</div>
+
+<!-- 开始界面 -->
+<div id="startScreen">
+    <div class="title">🎮 坦克对战 - 联机版</div>
+    <div id="loginSection" style="margin-bottom: 10px;">
+        <div style="color: #aaa; font-size: 12px; margin-bottom: 5px;">本地存档</div>
+        <input type="text" id="playerNameInput" placeholder="输入玩家名" 
+               style="padding: 10px; font-size: 16px; border-radius: 8px; border: none; text-align: center; width: 150px; background: #2c3e50; color: white;" 
+               maxlength="10" autocomplete="off">
+        <button class="btn-start" id="loginBtn" style="margin-left: 10px;">设置名字</button>
+    </div>
+    <div id="playerInfo" style="display: none; margin-bottom: 8px; color: #4a90d9; font-size: 16px;">
+        <span id="displayPlayerName"></span> | 最高分: <span id="displayHighScore">0</span> | 💰 <span id="displayCoins">0</span>
+        <button class="btn-start" onclick="logout()" style="margin-left: 10px; font-size: 12px; padding: 5px 15px;">退出</button>
+    </div>
+
+    <!-- 联机区域 -->
+    <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin:6px 0;">
+        <button class="btn-start green" onclick="createRoom()">📡 创建房间</button>
+        <input type="text" id="roomIdInput" placeholder="房间号" style="padding:6px 10px; border-radius:6px; border:none; width:120px; background:#2c3e50; color:white;">
+        <button class="btn-start orange" onclick="joinRoom()">🔗 加入房间</button>
+    </div>
+
+    <div class="save-manage">
+        <label>📁 存档</label>
+        <button class="btn-start export-btn" onclick="exportSave()">导出存档</button>
+        <button class="btn-start import-btn" onclick="importSave()">导入存档</button>
+    </div>
+
+    <button class="btn-start" onclick="showLevelSelect()">选择关卡</button>
+    <button class="btn-start" id="unlockAllBtn" onclick="unlockAllLevels()" style="background: #e74c3c; display: none;">🔓 一键通关</button>
+    <button class="btn-start" id="survivalBtn" onclick="startSurvivalMode()" style="background: #8e44ad; display: none;">🏰 生存模式</button>
+    <button class="btn-start purple" onclick="openShop()">🏪 商店</button>
+    <div class="instructions">
+        <p>🎯 <b>目标：</b>消灭所有敌人进入下一关</p>
+        <p>🤖 <b>队友：</b>绿色坦克自动协助，红色坦克为联机队友</p>
+        <p>🧱 <b>障碍：</b>点击地图放置障碍物（吸附到网格），需消耗背包资源</p>
+        <p>❤️ <b>道具：</b>血包恢复生命，护盾无敌5秒</p>
+        <p>👹 <b>Boss：</b>第10关有巨型Boss等你挑战！</p>
+        <p>🎯 <b>自动瞄准：</b>点击 🎯 按钮开启/关闭</p>
+        <p>🔫 <b>子弹规则：</b>玩家子弹穿透自己放置的墙（不造成伤害），敌人子弹会被挡住并造成伤害</p>
+        <p>💰 <b>金币：</b>击杀敌人获得金币，可在商店升级坦克</p>
+        <p>🌐 <b>联机：</b>创建房间后，队友输入房间号加入，共同作战</p>
+        <p>🗺️ <b>小地图：</b>右上角显示全局位置，资源矿点闪烁显示</p>
+    </div>
+</div>
+
+<!-- 选关界面 -->
+<div id="levelSelectScreen">
+    <div class="title">选择关卡</div>
+    <div class="level-grid" id="levelGrid"></div>
+    <button class="btn-start" onclick="backToStart()">返回</button>
+</div>
+
+<!-- 商店界面 -->
+<div id="shopScreen">
+    <div class="title">🏪 商店</div>
+    <div id="shopCoins">💰 <span id="shopCoinDisplay">0</span></div>
+    <div class="shop-grid" id="shopGrid"></div>
+    <button class="btn-start" onclick="closeShop()">关闭商店</button>
+</div>
+
+<!-- 关卡完成 -->
+<div id="levelCompleteScreen">
+    <div class="title" style="color: #2ecc71;">关卡完成！</div>
+    <div class="level-stats" id="levelStats"></div>
+    <button class="btn-start" onclick="nextLevel()">下一关</button>
+    <button class="btn-start" onclick="showLevelSelect()">选关</button>
+</div>
+
+<!-- 游戏结束 -->
+<div id="gameOverScreen">
+    <div class="title" id="gameOverTitle">游戏结束</div>
+    <div class="level-stats" id="finalStats"></div>
+    <button class="btn-start" onclick="restartGame()">重新开始</button>
+    <button class="btn-start" onclick="showLevelSelect()">选关</button>
+</div>
+
+<input type="file" id="importFileInput" accept=".json">
+
+<script>
+// ======================== 完整游戏代码 ========================
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const GAME_WIDTH = 400, GAME_HEIGHT = 480;
+canvas.width = GAME_WIDTH; canvas.height = GAME_HEIGHT;
+
+let gameRunning = false, currentLevel = 1, maxLevel = 10;
+let playerScore = 0, allyScore = 0, enemyScore = 0;
+let enemiesKilledThisLevel = 0, totalEnemiesInLevel = 0;
+let player = null, ally = null, enemies = [], boss = null;
+let bullets = [], particles = [], walls = [], items = [];
+const DIRECTIONS = { UP: 0, RIGHT: 1, DOWN: 2, LEFT: 3 };
+const keys = { up: false, down: false, left: false, right: false };
+const ITEM_TYPES = { HEALTH: { color: '#2ecc71' }, SHIELD: { color: '#3498db' } };
+
+// 生存模式
+const SURVIVAL_WIDTH = 1600, SURVIVAL_HEIGHT = 1920;
+let cameraX = 0, cameraY = 0;
+let backpackBlocks = 0, placedWalls = [], survivalResources = [];
+let survivalMode = false, survivalDay = 1, survivalTime = 0, isNight = false;
+let fortressWalls = [], survivalEnemies = [], survivalSpawnTimer = 0;
+
+// 网格设置（放置墙吸附）
+const GRID_SIZE = 32;
+
+// 自动瞄准
+let autoAimEnabled = false;
+
+// 本地存储
+const STORAGE_KEY = 'tankBattlePlayers';
+let currentPlayer = null;
+
+// 升级配置
+const UPGRADE_CONFIG = {
+    hp: { name: '❤️ 生命值', base: 5, maxLevel: 5, step: 1, maxVal: 10, prices: [10,20,30,40,50], desc: '每级 +1 最大生命' },
+    speed: { name: '💨 移动速度', base: 2.2, maxLevel: 5, step: 0.2, maxVal: 3.2, prices: [15,25,35,45,55], desc: '每级 +0.2 移速' },
+    attack: { name: '⚔️ 攻击力', base: 1, maxLevel: 5, step: 1, maxVal: 6, prices: [20,30,40,50,60], desc: '每级 +1 伤害' },
+    fireRate: { name: '🔫 射速', base: 25, maxLevel: 5, step: -2, maxVal: 15, prices: [25,35,45,55,65], desc: '每级 -2 冷却帧 (最快15帧)' }
+};
+
+// ========== 联机变量 ==========
+let peer = null, conn = null, isHost = false;
+let remotePlayer = null, remoteBullets = [], sendMoveInterval = 0;
+
+// ========== 背景星空/云层 ==========
+let stars = [];
+let clouds = [];
+function initBackground() {
+    stars = [];
+    for (let i = 0; i < 120; i++) {
+        stars.push({
+            x: Math.random() * GAME_WIDTH,
+            y: Math.random() * GAME_HEIGHT,
+            r: 0.5 + Math.random() * 2,
+            brightness: 0.3 + Math.random() * 0.7,
+            speed: 0.002 + Math.random() * 0.005
+        });
+    }
+    clouds = [];
+    for (let i = 0; i < 8; i++) {
+        clouds.push({
+            x: Math.random() * GAME_WIDTH,
+            y: Math.random() * GAME_HEIGHT,
+            w: 30 + Math.random() * 80,
+            h: 10 + Math.random() * 20,
+            speed: 0.1 + Math.random() * 0.3,
+            opacity: 0.03 + Math.random() * 0.06
+        });
+    }
+}
+initBackground();
+
+// ---------- 背景绘制函数 ----------
+function drawBackground() {
+    let gradient;
+    if (survivalMode) {
+        const baseColor = isNight ? '#0a0a15' : '#1a2a1a';
+        const topColor = isNight ? '#0a0a15' : '#2d5a2d';
+        const bottomColor = isNight ? '#050a0a' : '#1a3a1a';
+        gradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
+        gradient.addColorStop(0, topColor);
+        gradient.addColorStop(1, bottomColor);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+        ctx.strokeStyle = isNight ? 'rgba(60,80,60,0.2)' : 'rgba(80,120,80,0.3)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 80; i++) {
+            const x = (i * 5 + cameraX * 0.2) % GAME_WIDTH;
+            const y = (i * 7 + cameraY * 0.15) % GAME_HEIGHT;
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + 3, y - 5);
+            ctx.stroke();
+        }
+        ctx.fillStyle = isNight ? 'rgba(30,40,30,0.6)' : 'rgba(50,100,50,0.4)';
+        for (let i = 0; i < 12; i++) {
+            const tx = (i * 37 + 23) % GAME_WIDTH;
+            const ty = (i * 53 + 17) % GAME_HEIGHT;
+            ctx.beginPath();
+            ctx.arc(tx, ty, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = isNight ? 'rgba(20,30,20,0.5)' : 'rgba(40,80,40,0.3)';
+        }
+    } else {
+        const isBoss = currentLevel === 10;
+        const topColor = isBoss ? '#2a0a0a' : '#0a0a2a';
+        const bottomColor = isBoss ? '#1a0505' : '#05051a';
+        gradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
+        gradient.addColorStop(0, topColor);
+        gradient.addColorStop(1, bottomColor);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+        for (let star of stars) {
+            const brightness = star.brightness * (0.8 + 0.2 * Math.sin(Date.now() * star.speed));
+            ctx.globalAlpha = brightness;
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        for (let i = 0; i < 3; i++) {
+            const cx = (i * 200 + 50) % GAME_WIDTH;
+            const cy = (i * 150 + 80) % GAME_HEIGHT;
+            const grad = ctx.createRadialGradient(cx, cy, 5, cx, cy, 60 + i * 20);
+            grad.addColorStop(0, isBoss ? 'rgba(200,50,50,0.08)' : 'rgba(50,100,200,0.08)');
+            grad.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(cx - 80, cy - 80, 160, 160);
+        }
+    }
+    ctx.strokeStyle = 'rgba(74, 74, 106, 0.1)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < GAME_WIDTH; i += 40) {
+        ctx.beginPath();
+        ctx.moveTo(i, 0);
+        ctx.lineTo(i, GAME_HEIGHT);
+        ctx.stroke();
+    }
+    for (let i = 0; i < GAME_HEIGHT; i += 40) {
+        ctx.beginPath();
+        ctx.moveTo(0, i);
+        ctx.lineTo(GAME_WIDTH, i);
+        ctx.stroke();
+    }
+}
+
+function drawSurvivalBackground() {
+    drawBackground();
+    ctx.save();
+    ctx.translate(-cameraX * 0.1, -cameraY * 0.1);
+    ctx.fillStyle = isNight ? 'rgba(20,30,20,0.2)' : 'rgba(60,100,60,0.2)';
+    for (let i = 0; i < 10; i++) {
+        const x = i * 200 + 30;
+        const y = 200 + Math.sin(i * 0.7) * 50;
+        ctx.beginPath();
+        ctx.arc(x, y, 120 + Math.sin(i * 1.2) * 40, 0, Math.PI, true);
+        ctx.fill();
+    }
+    ctx.restore();
+}
+
+// ========== 小地图 ==========
+function drawMiniMap() {
+    const mapSize = 100;
+    const padding = 10;
+    const mapX = GAME_WIDTH - mapSize - padding;
+    const mapY = padding;
+    const scaleX = mapSize / (survivalMode ? SURVIVAL_WIDTH : GAME_WIDTH);
+    const scaleY = mapSize / (survivalMode ? SURVIVAL_HEIGHT : GAME_HEIGHT);
+
+    ctx.save();
+    ctx.globalAlpha = 0.7;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.strokeStyle = '#4a4a6a';
+    ctx.lineWidth = 2;
+    ctx.fillRect(mapX - 2, mapY - 2, mapSize + 4, mapSize + 4);
+    ctx.strokeRect(mapX - 2, mapY - 2, mapSize + 4, mapSize + 4);
+    ctx.globalAlpha = 1;
+
+    if (survivalMode) {
+        for (let res of survivalResources) {
+            if (!res.collected) {
+                const blink = 0.6 + 0.4 * Math.sin(Date.now() / 300 + res.x);
+                ctx.globalAlpha = blink;
+                ctx.fillStyle = '#f1c40f';
+                const rx = mapX + res.x * scaleX;
+                const ry = mapY + res.y * scaleY;
+                ctx.beginPath();
+                ctx.arc(rx, ry, 2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+            }
+        }
+    }
+
+    for (let wall of placedWalls) {
+        ctx.fillStyle = '#8B7355';
+        ctx.fillRect(mapX + wall.x * scaleX, mapY + wall.y * scaleY, 3, 3);
+    }
+
+    for (let enemy of enemies) {
+        if (enemy.health > 0) {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(mapX + enemy.x * scaleX - 1, mapY + enemy.y * scaleY - 1, 4, 4);
+        }
+    }
+    if (survivalMode) {
+        for (let enemy of survivalEnemies) {
+            if (enemy.health > 0) {
+                ctx.fillStyle = '#000';
+                ctx.fillRect(mapX + enemy.x * scaleX - 1, mapY + enemy.y * scaleY - 1, 4, 4);
+            }
+        }
+    }
+    if (boss) {
+        ctx.fillStyle = '#e67e22';
+        ctx.fillRect(mapX + boss.x * scaleX - 2, mapY + boss.y * scaleY - 2, 6, 6);
+    }
+
+    if (ally && ally.health > 0) {
+        ctx.fillStyle = '#2ecc71';
+        ctx.fillRect(mapX + ally.x * scaleX - 2, mapY + ally.y * scaleY - 2, 5, 5);
+    }
+
+    if (remotePlayer && remotePlayer.health > 0) {
+        ctx.fillStyle = '#e74c3c';
+        ctx.fillRect(mapX + remotePlayer.x * scaleX - 2, mapY + remotePlayer.y * scaleY - 2, 5, 5);
+    }
+
+    if (player && player.health > 0) {
+        ctx.fillStyle = '#4a90d9';
+        ctx.shadowColor = '#4a90d9';
+        ctx.shadowBlur = 6;
+        ctx.fillRect(mapX + player.x * scaleX - 3, mapY + player.y * scaleY - 3, 6, 6);
+        ctx.shadowBlur = 0;
+    }
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(
+        mapX + cameraX * scaleX,
+        mapY + cameraY * scaleY,
+        GAME_WIDTH * scaleX,
+        GAME_HEIGHT * scaleY
+    );
+
+    ctx.restore();
+}
+
+// ========== 类定义 ==========
+class BossTank {
+    constructor(x, y) {
+        this.x = x; this.y = y; this.width = 52; this.height = 52;
+        this.direction = DIRECTIONS.DOWN; this.speed = 1.2;
+        this.color = '#8e44ad'; this.maxHealth = 50; this.health = this.maxHealth;
+        this.cooldown = 0; this.phase = 1; this.shieldTime = 0; this.invincible = false;
+        this.pushVx = 0; this.pushVy = 0; this.patternTimer = 0;
+    }
+    move(dx, dy) {
+        const newX = this.x + dx * this.speed + this.pushVx;
+        const newY = this.y + dy * this.speed + this.pushVy;
+        if (newX < 0 || newX + this.width > GAME_WIDTH || newY < 0 || newY + this.height > GAME_HEIGHT) { this.pushVx *= -0.5; this.pushVy *= -0.5; return; }
+        for (let wall of walls) if (this.checkRectCollision(newX, newY, wall)) { this.pushVx = -dx * 2; this.pushVy = -dy * 2; return; }
+        const allTanks = [player, ally, ...enemies].filter(t => t && t.health > 0);
+        for (let tank of allTanks) {
+            if (this.checkRectCollision(newX, newY, tank)) {
+                const pushX = dx * this.speed * 0.8, pushY = dy * this.speed * 0.8;
+                tank.pushVx += pushX; tank.pushVy += pushY;
+                this.pushVx -= pushX * 0.5; this.pushVy -= pushY * 0.5;
+                return;
+            }
+        }
+        this.x = newX; this.y = newY;
+        this.pushVx *= 0.9; this.pushVy *= 0.9;
+        if (Math.abs(this.pushVx) < 0.1) this.pushVx = 0;
+        if (Math.abs(this.pushVy) < 0.1) this.pushVy = 0;
+        if (Math.abs(dx) > Math.abs(dy)) this.direction = dx > 0 ? DIRECTIONS.RIGHT : DIRECTIONS.LEFT;
+        else if (dy !== 0) this.direction = dy > 0 ? DIRECTIONS.DOWN : DIRECTIONS.UP;
+    }
+    checkRectCollision(x, y, obj) {
+        return x < obj.x + obj.width && x + this.width > obj.x && y < obj.y + obj.height && y + this.height > obj.y;
+    }
+    applyPush() {
+        if (Math.abs(this.pushVx) > 0.1 || Math.abs(this.pushVy) > 0.1) {
+            const newX = this.x + this.pushVx, newY = this.y + this.pushVy;
+            if (newX >= 0 && newX + this.width <= GAME_WIDTH && newY >= 0 && newY + this.height <= GAME_HEIGHT) {
+                let hit = false;
+                for (let wall of walls) if (this.checkRectCollision(newX, newY, wall)) { hit = true; break; }
+                if (!hit) { this.x = newX; this.y = newY; }
+            }
+            this.pushVx *= 0.9; this.pushVy *= 0.9;
+            if (Math.abs(this.pushVx) < 0.1) this.pushVx = 0;
+            if (Math.abs(this.pushVy) < 0.1) this.pushVy = 0;
+        }
+    }
+    update() {
+        if (this.cooldown > 0) this.cooldown--;
+        if (this.shieldTime > 0) this.shieldTime--;
+        this.patternTimer++;
+        if (this.health <= this.maxHealth * 0.6 && this.phase === 1) { this.phase = 2; this.speed = 1.5; }
+        if (this.health <= this.maxHealth * 0.3 && this.phase === 2) { this.phase = 3; this.speed = 1.8; }
+        let target = player && player.health > 0 ? player : (ally && ally.health > 0 ? ally : null);
+        if (!target) return;
+        const dx = target.x - this.x, dy = target.y - this.y;
+        if (this.phase === 1) {
+            if (Math.abs(dx) > Math.abs(dy)) this.move(dx > 0 ? 1 : -1, 0);
+            else this.move(0, dy > 0 ? 1 : -1);
+            if (Math.random() < 0.015) this.fireNormal();
+        } else if (this.phase === 2) {
+            if (this.patternTimer % 60 < 30) {
+                if (Math.abs(dx) > Math.abs(dy)) this.move(dx > 0 ? 1 : -1, 0);
+                else this.move(0, dy > 0 ? 1 : -1);
+            }
+            if (Math.random() < 0.03) this.fireSpread();
+        } else {
+            if (Math.random() < 0.1) {
+                if (Math.abs(dx) > Math.abs(dy)) this.move(dx > 0 ? 2 : -2, 0);
+                else this.move(0, dy > 0 ? 2 : -2);
+            }
+            if (Math.random() < 0.04) this.fireCircle();
+        }
+        if (Math.abs(dx) > Math.abs(dy)) this.direction = dx > 0 ? DIRECTIONS.RIGHT : DIRECTIONS.LEFT;
+        else this.direction = dy > 0 ? DIRECTIONS.DOWN : DIRECTIONS.UP;
+    }
+    fireNormal() {
+        if (this.cooldown > 0) return;
+        let bx = this.x + this.width / 2 - 4, by = this.y + this.height / 2 - 4, vx = 0, vy = 0;
+        switch(this.direction) {
+            case DIRECTIONS.UP: vy = -6; by = this.y - 8; break;
+            case DIRECTIONS.RIGHT: vx = 6; bx = this.x + this.width; break;
+            case DIRECTIONS.DOWN: vy = 6; by = this.y + this.height; break;
+            case DIRECTIONS.LEFT: vx = -6; bx = this.x - 8; break;
+        }
+        bullets.push(new Bullet(bx, by, vx, vy, 'enemy', true));
+        this.cooldown = 20;
+    }
+    fireSpread() {
+        if (this.cooldown > 0) return;
+        const cx = this.x + this.width / 2, cy = this.y + this.height / 2;
+        for (let i = -1; i <= 1; i++) {
+            const angle = this.direction * Math.PI / 2 + i * 0.3;
+            bullets.push(new Bullet(cx, cy, Math.cos(angle) * 6, Math.sin(angle) * 6, 'enemy', true));
+        }
+        this.cooldown = 30;
+    }
+    fireCircle() {
+        if (this.cooldown > 0) return;
+        const cx = this.x + this.width / 2, cy = this.y + this.height / 2;
+        for (let i = 0; i < 8; i++) {
+            const angle = (Math.PI * 2 / 8) * i;
+            bullets.push(new Bullet(cx, cy, Math.cos(angle) * 5, Math.sin(angle) * 5, 'enemy', true));
+        }
+        this.cooldown = 40;
+    }
+    takeDamage(damage) {
+        if (this.shieldTime > 0 || this.invincible) return false;
+        this.health -= damage; this.invincible = true;
+        setTimeout(() => { this.invincible = false; }, 200);
+        return true;
+    }
+    draw() {
+        ctx.save();
+        if (this.phase >= 2) {
+            ctx.strokeStyle = 'rgba(231, 76, 60, ' + (0.3 + Math.sin(Date.now() / 100) * 0.2) + ')';
+            ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.arc(this.x + this.width/2, this.y + this.height/2, 40, 0, Math.PI * 2); ctx.stroke();
+        }
+        if (this.invincible && Math.floor(Date.now() / 80) % 2 === 0) ctx.globalAlpha = 0.6;
+        ctx.translate(this.x + this.width/2, this.y + this.height/2);
+        ctx.rotate(this.direction * Math.PI / 2);
+        ctx.fillStyle = this.color;
+        ctx.fillRect(-this.width/2, -this.height/2, this.width, this.height);
+        ctx.fillStyle = '#6c3483';
+        ctx.fillRect(-this.width/2 + 5, -this.height/2 + 5, this.width - 10, this.height - 10);
+        ctx.fillStyle = '#2c3e50';
+        ctx.fillRect(-this.width/2 - 4, -this.height/2 + 8, 6, this.height - 16);
+        ctx.fillRect(this.width/2 - 2, -this.height/2 + 8, 6, this.height - 16);
+        ctx.fillStyle = '#8e44ad';
+        ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#5b2c6f';
+        ctx.fillRect(-5, -this.height/2 - 15, 10, 20);
+        ctx.fillStyle = '#e74c3c';
+        ctx.beginPath(); ctx.arc(-8, -8, 5, 0, Math.PI * 2); ctx.arc(8, -8, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.restore(); ctx.globalAlpha = 1;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(this.x - 4, this.y - 15, 60, 6);
+        const hp = this.health / this.maxHealth;
+        ctx.fillStyle = hp > 0.5 ? '#9b59b6' : hp > 0.25 ? '#e67e22' : '#e74c3c';
+        ctx.fillRect(this.x - 4, this.y - 15, 60 * hp, 6);
+        ctx.fillStyle = '#e74c3c';
+        ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center';
+        ctx.fillText('BOSS 阶段' + this.phase, this.x + this.width/2, this.y - 20);
+    }
+}
+
+class Tank {
+    constructor(x, y, type) {
+        this.x = x; this.y = y; this.width = 26; this.height = 26;
+        this.direction = DIRECTIONS.UP; this.type = type;
+        this.pushVx = 0; this.pushVy = 0; this.pushResistance = 0.9;
+        if (type === 'player') {
+            this.speed = getUpgradeValue('speed');
+            this.maxHealth = getUpgradeValue('hp');
+            this.attackBonus = getUpgradeValue('attack');
+            this.cooldownMax = getUpgradeValue('fireRate');
+            this.color = '#4a90d9';
+        } else if (type === 'ally') {
+            this.speed = 2; this.maxHealth = 4; this.attackBonus = 1; this.cooldownMax = 25; this.color = '#2ecc71';
+        } else if (type === 'remote') {
+            this.speed = 2.2; this.maxHealth = 5; this.attackBonus = 1; this.cooldownMax = 25; this.color = '#e74c3c';
+        } else {
+            this.speed = LEVEL_CONFIG.getConfig(currentLevel).enemySpeed;
+            this.maxHealth = LEVEL_CONFIG.getConfig(currentLevel).enemyHealth;
+            this.attackBonus = 1; this.cooldownMax = 25; this.color = '#e74c3c';
+        }
+        this.health = this.maxHealth;
+        this.cooldown = 0;
+        this.shieldTime = 0;
+        this.invincible = false;
+        this.angle = 0;
+    }
+    move(dx, dy) {
+        const newX = this.x + dx * this.speed + this.pushVx;
+        const newY = this.y + dy * this.speed + this.pushVy;
+        const maxX = survivalMode ? SURVIVAL_WIDTH : GAME_WIDTH;
+        const maxY = survivalMode ? SURVIVAL_HEIGHT : GAME_HEIGHT;
+        if (newX < 0 || newX + this.width > maxX) { this.pushVx *= -0.5; return false; }
+        if (newY < 0 || newY + this.height > maxY) { this.pushVy *= -0.5; return false; }
+        for (let wall of walls) if (this.checkRectCollision(newX, newY, wall)) { this.pushVx = -dx * 2; this.pushVy = -dy * 2; return false; }
+        if (survivalMode && this.type === 'enemy') {
+            for (let wall of placedWalls) {
+                if (this.checkRectCollision(newX, newY, wall)) { this.pushVx = -dx * 2; this.pushVy = -dy * 2; return false; }
+            }
+        }
+        if (boss && this.checkRectCollision(newX, newY, boss)) { this.pushVx = -dx * 3; this.pushVy = -dy * 3; return false; }
+        const allTanks = [player, ally, ...enemies].filter(t => t && t !== this && t.health > 0);
+        let collided = false;
+        for (let tank of allTanks) {
+            if (this.checkRectCollision(newX, newY, tank)) {
+                const pushX = dx * this.speed * 0.8, pushY = dy * this.speed * 0.8;
+                tank.pushVx += pushX; tank.pushVy += pushY;
+                this.pushVx -= pushX * 0.5; this.pushVy -= pushY * 0.5;
+                collided = true;
+            }
+        }
+        if (collided) return false;
+        this.x = newX; this.y = newY;
+        this.pushVx *= this.pushResistance; this.pushVy *= this.pushResistance;
+        if (Math.abs(this.pushVx) < 0.1) this.pushVx = 0;
+        if (Math.abs(this.pushVy) < 0.1) this.pushVy = 0;
+        if (dx !== 0 || dy !== 0) {
+            this.angle = Math.atan2(dy, dx);
+        }
+        return true;
+    }
+    checkRectCollision(x, y, obj) {
+        if (obj.isFortress && this.type === 'player') return false;
+        return x < obj.x + obj.width && x + this.width > obj.x && y < obj.y + obj.height && y + this.height > obj.y;
+    }
+    applyPush() {
+        if (Math.abs(this.pushVx) > 0.1 || Math.abs(this.pushVy) > 0.1) {
+            const newX = this.x + this.pushVx, newY = this.y + this.pushVy;
+            const maxX = survivalMode ? SURVIVAL_WIDTH : GAME_WIDTH;
+            const maxY = survivalMode ? SURVIVAL_HEIGHT : GAME_HEIGHT;
+            if (newX >= 0 && newX + this.width <= maxX && newY >= 0 && newY + this.height <= maxY) {
+                let hit = false;
+                for (let wall of walls) if (this.checkRectCollision(newX, newY, wall)) { hit = true; break; }
+                if (survivalMode && this.type === 'enemy') {
+                    for (let wall of placedWalls) {
+                        if (this.checkRectCollision(newX, newY, wall)) { hit = true; break; }
+                    }
+                }
+                if (!hit && !(boss && this.checkRectCollision(newX, newY, boss))) { this.x = newX; this.y = newY; }
+            }
+            this.pushVx *= this.pushResistance; this.pushVy *= this.pushResistance;
+            if (Math.abs(this.pushVx) < 0.1) this.pushVx = 0;
+            if (Math.abs(this.pushVy) < 0.1) this.pushVy = 0;
+        }
+    }
+    fire() {
+        if (this.cooldown > 0) return;
+        const speed = 7;
+        const vx = Math.cos(this.angle) * speed;
+        const vy = Math.sin(this.angle) * speed;
+        const bx = this.x + this.width / 2 + Math.cos(this.angle) * 20;
+        const by = this.y + this.height / 2 + Math.sin(this.angle) * 20;
+        let damage = 1;
+        if (this.type === 'player') damage = this.attackBonus || 1;
+        bullets.push(new Bullet(bx, by, vx, vy, this.type, false, damage));
+        this.cooldown = this.cooldownMax || 25;
+        if (this.type === 'player' && conn) sendFire();
+    }
+    takeDamage(damage) {
+        if (this.shieldTime > 0 || this.invincible) return false;
+        this.health -= damage; this.invincible = true;
+        setTimeout(() => { this.invincible = false; }, 400);
+        return true;
+    }
+    heal(amount) { this.health = Math.min(this.health + amount, this.maxHealth); }
+    activateShield(duration) { this.shieldTime = duration; }
+    update() {
+        this.applyPush();
+        if (this.cooldown > 0) this.cooldown--;
+        if (this.shieldTime > 0) this.shieldTime--;
+    }
+    draw() {
+        if (this.type === 'remote') {
+            ctx.save();
+            ctx.translate(this.x + this.width/2, this.y + this.height/2);
+            ctx.rotate(this.angle);
+            ctx.fillStyle = this.color || '#e74c3c';
+            ctx.fillRect(-this.width/2, -this.height/2, this.width, this.height);
+            ctx.fillStyle = '#333';
+            ctx.fillRect(-this.width/2 - 2, -this.height/2 + 2, 4, this.height - 4);
+            ctx.fillRect(this.width/2 - 2, -this.height/2 + 2, 4, this.height - 4);
+            ctx.fillStyle = '#2c3e50';
+            ctx.fillRect(-9, -9, 18, 18);
+            ctx.fillStyle = '#555';
+            ctx.fillRect(this.width/2, -3, 18, 6);
+            ctx.restore();
+            ctx.fillStyle = '#333';
+            ctx.fillRect(this.x, this.y - 10, 26, 3);
+            const hp = this.health / this.maxHealth;
+            ctx.fillStyle = hp > 0.5 ? '#2ecc71' : hp > 0.25 ? '#f39c12' : '#e74c3c';
+            ctx.fillRect(this.x, this.y - 10, 26 * hp, 3);
+            ctx.fillStyle = '#e74c3c';
+            ctx.font = '9px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('联机队友', this.x + this.width/2, this.y - 14);
+            return;
+        }
+        ctx.save();
+        if (this.shieldTime > 0) {
+            ctx.strokeStyle = 'rgba(52, 152, 219, ' + (0.3 + Math.sin(Date.now() / 100) * 0.3) + ')';
+            ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.arc(this.x + this.width/2, this.y + this.height/2, 20, 0, Math.PI * 2); ctx.stroke();
+        }
+        if (this.invincible && Math.floor(Date.now() / 80) % 2 === 0) ctx.globalAlpha = 0.5;
+        ctx.translate(this.x + this.width/2, this.y + this.height/2);
+        ctx.rotate(this.angle);
+        ctx.fillStyle = this.color;
+        ctx.fillRect(-this.width/2, -this.height/2, this.width, this.height);
+        ctx.fillStyle = '#333';
+        ctx.fillRect(-this.width/2 - 2, -this.height/2 + 2, 4, this.height - 4);
+        ctx.fillRect(this.width/2 - 2, -this.height/2 + 2, 4, this.height - 4);
+        ctx.fillStyle = '#2c3e50';
+        ctx.fillRect(-9, -9, 18, 18);
+        ctx.fillStyle = '#555';
+        ctx.fillRect(this.width/2, -3, 18, 6);
+        ctx.restore(); ctx.globalAlpha = 1;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(this.x, this.y - 10, 26, 3);
+        const hp = this.health / this.maxHealth;
+        ctx.fillStyle = hp > 0.5 ? '#2ecc71' : hp > 0.25 ? '#f39c12' : '#e74c3c';
+        ctx.fillRect(this.x, this.y - 10, 26 * hp, 3);
+        if (this.type === 'ally') {
+            ctx.fillStyle = '#2ecc71'; ctx.font = '9px Arial'; ctx.textAlign = 'center';
+            ctx.fillText('队友', this.x + this.width/2, this.y - 14);
+        }
+    }
+}
+
+// ========== 【修复】Bullet 类 - 玩家子弹穿透放置墙不造成伤害 ==========
+class Bullet {
+    constructor(x, y, vx, vy, ownerType, isBossBullet, damage = 1) {
+        this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+        this.width = isBossBullet ? 10 : 6; this.height = isBossBullet ? 10 : 6;
+        this.ownerType = ownerType; this.isBossBullet = isBossBullet; this.active = true;
+        this.damage = damage;
+    }
+    update() {
+        this.x += this.vx; this.y += this.vy;
+        const maxX = survivalMode ? SURVIVAL_WIDTH : GAME_WIDTH;
+        const maxY = survivalMode ? SURVIVAL_HEIGHT : GAME_HEIGHT;
+        if (this.x < 0 || this.x > maxX || this.y < 0 || this.y > maxY) { this.active = false; return; }
+
+        // 检测放置墙（玩家子弹完全穿透，不造成伤害；敌方子弹阻挡并造成伤害）
+        if (survivalMode) {
+            for (let i = placedWalls.length - 1; i >= 0; i--) {
+                if (this.checkCollision(placedWalls[i])) {
+                    if (this.ownerType === 'player') {
+                        // 玩家子弹：完全穿透，不造成伤害，不消失
+                        // 不做任何操作，继续检测其他碰撞
+                        break; // 每帧最多穿透一面墙（避免一次穿多面）
+                    } else {
+                        // 敌方子弹：造成伤害并消失
+                        createParticles(this.x, this.y, '#7f8c8d', 6);
+                        if (placedWalls[i].takeDamage(1)) {
+                            placedWalls.splice(i, 1);
+                        }
+                        this.active = false;
+                        return;
+                    }
+                }
+            }
+        }
+
+        // 检测普通墙（所有子弹均阻挡并造成伤害）
+        for (let i = walls.length - 1; i >= 0; i--) {
+            if (this.checkCollision(walls[i])) {
+                createParticles(this.x, this.y, '#7f8c8d', 6);
+                walls[i].health--;
+                if (walls[i].health <= 0) {
+                    const ox = walls[i].x, oy = walls[i].y;
+                    walls.splice(i, 1);
+                    setTimeout(() => spawnRandomWall(), 500);
+                    if (Math.random() < 0.15) spawnItem(ox + 3, oy + 3);
+                }
+                this.active = false; return;
+            }
+        }
+
+        // 检测 Boss
+        if (boss && this.ownerType !== 'enemy' && this.checkCollision(boss)) {
+            if (boss.takeDamage(this.damage)) {
+                createParticles(this.x, this.y, boss.color, 10);
+                if (boss.health <= 0) handleBossDeath();
+            }
+            this.active = false; return;
+        }
+
+        // 检测敌方坦克
+        let targets = [];
+        if (this.ownerType === 'enemy') {
+            targets = [player, ally];
+        } else {
+            targets = [...enemies];
+            if (survivalMode) targets = targets.concat(survivalEnemies);
+        }
+        for (let target of targets) {
+            if (target && this.checkCollision(target)) {
+                if (target.takeDamage(this.damage)) {
+                    createParticles(this.x, this.y, target.color, 8);
+                    target.pushVx = this.vx * 0.3; target.pushVy = this.vy * 0.3;
+                    if (target.health <= 0) handleTankDeath(target);
+                }
+                this.active = false; return;
+            }
+        }
+    }
+    checkCollision(obj) {
+        return this.x < obj.x + obj.width && this.x + this.width > obj.x && this.y < obj.y + obj.height && this.y + this.height > obj.y;
+    }
+    draw() {
+        ctx.fillStyle = this.isBossBullet ? '#e74c3c' : (this.ownerType === 'enemy' ? '#e67e22' : '#f1c40f');
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+    }
+}
+
+class Wall {
+    constructor(x, y, isFortress = false) {
+        this.x = x; this.y = y; this.width = 28; this.height = 28;
+        this.vx = (Math.random() - 0.5) * 0.8; this.vy = (Math.random() - 0.5) * 0.8; this.health = 2;
+        this.isFortress = isFortress;
+    }
+    update() {
+        let newX = this.x + this.vx, newY = this.y + this.vy;
+        if (newX <= 0 || newX + this.width >= GAME_WIDTH) { this.vx *= -1; newX = Math.max(0, Math.min(newX, GAME_WIDTH - this.width)); }
+        if (newY <= 0 || newY + this.height >= GAME_HEIGHT) { this.vy *= -1; newY = Math.max(0, Math.min(newY, GAME_HEIGHT - this.height)); }
+        let collided = false;
+        for (let other of walls) {
+            if (other !== this) {
+                const overlapX = Math.min(newX + this.width - other.x, other.x + other.width - newX);
+                const overlapY = Math.min(newY + this.height - other.y, other.y + other.height - newY);
+                if (newX < other.x + other.width && newX + this.width > other.x && newY < other.y + other.height && newY + this.height > other.y) {
+                    collided = true;
+                    if (overlapX < overlapY) { this.vx *= -1; newX = this.x; }
+                    else { this.vy *= -1; newY = this.y; }
+                }
+            }
+        }
+        this.x = newX; this.y = newY;
+        const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+        if (speed > 0.5) { this.vx = this.vx / speed * 0.5; this.vy = this.vy / speed * 0.5; }
+    }
+    draw() {
+        if (this.isFortress) {
+            ctx.fillStyle = 'rgba(149, 165, 166, 0.5)';
+            ctx.strokeStyle = '#7f8c8d';
+            ctx.lineWidth = 2;
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+            ctx.strokeRect(this.x, this.y, this.width, this.height);
+            return;
+        }
+        const pulse = 0.6 + Math.sin(Date.now() / 300 + this.x) * 0.15;
+        ctx.fillStyle = 'rgba(127, 140, 141, ' + pulse + ')';
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+        ctx.strokeStyle = '#555'; ctx.strokeRect(this.x, this.y, this.width, this.height);
+        if (this.health < 2) {
+            ctx.strokeStyle = '#333';
+            ctx.beginPath(); ctx.moveTo(this.x + 5, this.y + 5); ctx.lineTo(this.x + 15, this.y + 18);
+            ctx.moveTo(this.x + 18, this.y + 8); ctx.lineTo(this.x + 8, this.y + 22); ctx.stroke();
+        }
+    }
+    checkCollision(obj) {
+        if (this.isFortress && obj.type === 'player') return false;
+        return this.x < obj.x + obj.width && this.x + this.width > obj.x && this.y < obj.y + obj.height && this.y + this.height > obj.y;
+    }
+}
+
+// PlacedWall 保持不变（但尺寸为 GRID_SIZE）
+class PlacedWall {
+    constructor(x, y, health = 10) {
+        this.x = x;
+        this.y = y;
+        this.width = GRID_SIZE;
+        this.height = GRID_SIZE;
+        this.health = health;
+        this.maxHealth = 10;
+    }
+    draw() {
+        const healthRatio = this.health / this.maxHealth;
+        ctx.fillStyle = `rgb(${80 + 100 * healthRatio}, ${80 + 100 * healthRatio}, ${100 + 100 * healthRatio})`;
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+        ctx.strokeStyle = '#555';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(this.x, this.y, this.width, this.height);
+        ctx.fillStyle = '#333';
+        ctx.fillRect(this.x + 2, this.y + 2, this.width - 4, 3);
+        ctx.fillStyle = healthRatio > 0.5 ? '#2ecc71' : '#e74c3c';
+        ctx.fillRect(this.x + 2, this.y + 2, (this.width - 4) * healthRatio, 3);
+    }
+    takeDamage(damage) {
+        this.health -= damage;
+        return this.health <= 0;
+    }
+    checkCollision(obj) {
+        return this.x < obj.x + obj.width && this.x + this.width > obj.x &&
+               this.y < obj.y + obj.height && this.y + this.height > obj.y;
+    }
+}
+
+class Item {
+    constructor(x, y, type) {
+        this.x = x; this.y = y; this.width = 22; this.height = 22;
+        this.type = type; this.life = 800; this.bobOffset = Math.random() * Math.PI * 2;
+    }
+    update() { this.life--; return this.life > 0; }
+    draw() {
+        const bobY = Math.sin(Date.now() / 200 + this.bobOffset) * 3;
+        const alpha = Math.min(1, this.life / 100);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = ITEM_TYPES[this.type].color;
+        ctx.beginPath(); ctx.arc(this.x + this.width/2, this.y + this.height/2 + bobY, 9, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.beginPath(); ctx.arc(this.x + this.width/2, this.y + this.height/2 + bobY, 12, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(this.type === 'HEALTH' ? '+' : '盾', this.x + this.width/2, this.y + this.height/2 + bobY);
+        ctx.globalAlpha = 1;
+    }
+    checkCollision(tank) {
+        return this.x < tank.x + tank.width && this.x + this.width > tank.x && this.y < tank.y + tank.height && this.y + this.height > tank.y;
+    }
+}
+
+const LEVEL_CONFIG = {
+    getConfig: (level) => level === 10 ? { isBossLevel: true, enemyCount: 0, enemyHealth: 3, enemySpeed: 2, wallCount: 12, requiredKills: 1 }
+        : { isBossLevel: false, enemyCount: 3 + level, enemyHealth: 2 + Math.floor(level/3), enemySpeed: Math.min(1.5 + level*0.15, 3), wallCount: Math.min(5+level,14), requiredKills: 3+level }
+};
+
+// ========== 工具函数 ==========
+function createParticles(x, y, color, count) {
+    count = count || 8;
+    for (let i = 0; i < count; i++) {
+        const angle = (Math.PI * 2 / count) * i + Math.random() * 0.5;
+        particles.push({ x, y, vx: Math.cos(angle) * (2 + Math.random() * 3), vy: Math.sin(angle) * (2 + Math.random() * 3), life: 20 + Math.random() * 15, color, size: 3 + Math.random() * 3 });
+    }
+}
+function updateParticles() {
+    for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        p.x += p.vx; p.y += p.vy; p.vx *= 0.95; p.vy *= 0.95; p.life--;
+        if (p.life <= 0) particles.splice(i, 1);
+    }
+}
+function drawParticles() {
+    for (let p of particles) {
+        ctx.globalAlpha = p.life / 30;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, p.size, p.size);
+    }
+    ctx.globalAlpha = 1;
+}
+function spawnRandomWall() {
+    let x, y, attempts = 0;
+    do {
+        x = Math.random() * (GAME_WIDTH - 30);
+        y = Math.random() * (GAME_HEIGHT - 30);
+        attempts++;
+    } while (attempts < 50 && isPositionOccupied(x, y, 30, 30));
+    if (attempts < 50) walls.push(new Wall(x, y));
+}
+function isPositionOccupied(x, y, w, h) {
+    const allObjs = [player, ally, ...enemies, boss].filter(o => o);
+    for (let obj of allObjs) {
+        if (obj.x < x + w && obj.x + obj.width > x && obj.y < y + h && obj.y + obj.height > y) return true;
+    }
+    for (let wall of walls) {
+        if (wall.x < x + w && wall.x + wall.width > x && wall.y < y + h && wall.y + wall.height > y) return true;
+    }
+    return false;
+}
+function spawnItem(x, y) {
+    const type = Math.random() < 0.6 ? 'HEALTH' : 'SHIELD';
+    items.push(new Item(x, y, type));
+}
+
+// ---- 金币 & 升级 ----
+function getPlayerCoins() {
+    if (!currentPlayer) return 0;
+    const players = loadPlayers();
+    return players[currentPlayer].coins || 0;
+}
+function addPlayerCoins(amount) {
+    if (!currentPlayer) return;
+    const players = loadPlayers();
+    players[currentPlayer].coins = (players[currentPlayer].coins || 0) + amount;
+    savePlayers(players);
+    updateCoinDisplay();
+}
+function updateCoinDisplay() {
+    const coins = getPlayerCoins();
+    document.getElementById('coinDisplay').textContent = coins;
+    document.getElementById('displayCoins').textContent = coins;
+    document.getElementById('shopCoinDisplay').textContent = coins;
+}
+function getUpgradeLevel(key) {
+    if (!currentPlayer) return 0;
+    const players = loadPlayers();
+    return (players[currentPlayer].upgrades && players[currentPlayer].upgrades[key]) || 0;
+}
+function setUpgradeLevel(key, level) {
+    if (!currentPlayer) return;
+    const players = loadPlayers();
+    if (!players[currentPlayer].upgrades) players[currentPlayer].upgrades = {};
+    players[currentPlayer].upgrades[key] = level;
+    savePlayers(players);
+}
+function getUpgradeValue(key) {
+    const level = getUpgradeLevel(key);
+    const cfg = UPGRADE_CONFIG[key];
+    return cfg.base + cfg.step * level;
+}
+function applyUpgradesToPlayer(tank) {
+    if (!tank || tank.type !== 'player') return;
+    tank.maxHealth = getUpgradeValue('hp');
+    tank.health = Math.min(tank.health, tank.maxHealth);
+    tank.speed = getUpgradeValue('speed');
+    tank.attackBonus = getUpgradeValue('attack');
+    tank.cooldownMax = getUpgradeValue('fireRate');
+    if (tank.cooldown > tank.cooldownMax) tank.cooldown = tank.cooldownMax;
+}
+function openShop() {
+    if (!currentPlayer) { alert('请先登录！'); return; }
+    document.getElementById('shopScreen').style.display = 'flex';
+    renderShop();
+}
+function closeShop() {
+    document.getElementById('shopScreen').style.display = 'none';
+}
+function renderShop() {
+    const grid = document.getElementById('shopGrid');
+    grid.innerHTML = '';
+    const coins = getPlayerCoins();
+    document.getElementById('shopCoinDisplay').textContent = coins;
+    for (const [key, cfg] of Object.entries(UPGRADE_CONFIG)) {
+        const level = getUpgradeLevel(key);
+        const maxLevel = cfg.maxLevel;
+        const price = level < maxLevel ? cfg.prices[level] : null;
+        const div = document.createElement('div');
+        div.className = 'shop-item';
+        div.innerHTML = `
+            <div class="info">
+                <div class="name">${cfg.name}</div>
+                <div class="desc">${cfg.desc} (当前: ${level}/${maxLevel})</div>
+            </div>
+            <div>
+                ${price !== null ? `<span class="price">💰 ${price}</span>` : '<span style="color:#2ecc71;">已满级</span>'}
+                <button class="buy-btn" ${price === null || coins < price ? 'disabled' : ''} 
+                        onclick="buyUpgrade('${key}')">升级</button>
+            </div>
+        `;
+        grid.appendChild(div);
+    }
+}
+function buyUpgrade(key) {
+    const level = getUpgradeLevel(key);
+    const cfg = UPGRADE_CONFIG[key];
+    if (level >= cfg.maxLevel) { alert('已满级！'); return; }
+    const price = cfg.prices[level];
+    const coins = getPlayerCoins();
+    if (coins < price) { alert('金币不足！'); return; }
+    addPlayerCoins(-price);
+    setUpgradeLevel(key, level + 1);
+    renderShop();
+    updateCoinDisplay();
+    if (player && player.type === 'player') applyUpgradesToPlayer(player);
+    alert('升级成功！');
+}
+
+// ---- 登录/存档 ----
+function loadPlayers() {
+    const data = localStorage.getItem(STORAGE_KEY);
+    return data ? JSON.parse(data) : {};
+}
+function savePlayers(players) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(players));
+}
+function login() {
+    const nameInput = document.getElementById('playerNameInput');
+    const name = nameInput.value.trim();
+    if (!name) { alert('⚠️ 请输入玩家名！'); nameInput.focus(); return; }
+    try {
+        const players = loadPlayers();
+        if (!players[name]) {
+            players[name] = { highScore: 0, totalGames: 0, unlockedLevels: [1], survivalData: null, coins: 0, upgrades: { hp: 0, speed: 0, attack: 0, fireRate: 0 } };
+            savePlayers(players);
+        }
+        currentPlayer = name;
+        document.getElementById('loginSection').style.display = 'none';
+        document.getElementById('playerInfo').style.display = 'block';
+        document.getElementById('displayPlayerName').textContent = name;
+        document.getElementById('displayHighScore').textContent = players[name].highScore || 0;
+        document.getElementById('displayCoins').textContent = players[name].coins || 0;
+        updateUIAfterLogin();
+        updateCoinDisplay();
+    } catch (e) { alert('❌ 登录失败：' + e.message); console.error(e); }
+}
+function logout() {
+    currentPlayer = null;
+    document.getElementById('loginSection').style.display = 'block';
+    document.getElementById('playerInfo').style.display = 'none';
+    document.getElementById('playerNameInput').value = '';
+    updateUIAfterLogin();
+}
+function updateHighScore(score) {
+    if (!currentPlayer) return;
+    const players = loadPlayers();
+    if (score > players[currentPlayer].highScore) {
+        players[currentPlayer].highScore = score;
+        savePlayers(players);
+        document.getElementById('displayHighScore').textContent = score;
+    }
+}
+function getUnlockedLevels() {
+    if (!currentPlayer) return [1];
+    const players = loadPlayers();
+    return players[currentPlayer].unlockedLevels || [1];
+}
+function unlockAllLevels() {
+    if (!currentPlayer) { alert('请先登录'); return; }
+    const players = loadPlayers();
+    players[currentPlayer].unlockedLevels = [1,2,3,4,5,6,7,8,9,10];
+    players[currentPlayer].highScore = Math.max(players[currentPlayer].highScore, 9999);
+    savePlayers(players);
+    alert('已解锁所有关卡！');
+    updateUIAfterLogin();
+}
+function isSurvivalUnlocked() {
+    if (!currentPlayer) return false;
+    const players = loadPlayers();
+    return players[currentPlayer].unlockedLevels && players[currentPlayer].unlockedLevels.includes(10);
+}
+function updateUIAfterLogin() {
+    if (currentPlayer) {
+        document.getElementById('unlockAllBtn').style.display = 'inline-block';
+        document.getElementById('survivalBtn').style.display = isSurvivalUnlocked() ? 'inline-block' : 'none';
+    } else {
+        document.getElementById('unlockAllBtn').style.display = 'none';
+        document.getElementById('survivalBtn').style.display = 'none';
+    }
+}
+function unlockLevel(level) {
+    if (!currentPlayer) return;
+    const players = loadPlayers();
+    if (!players[currentPlayer].unlockedLevels.includes(level)) {
+        players[currentPlayer].unlockedLevels.push(level);
+        players[currentPlayer].unlockedLevels.sort((a,b)=>a-b);
+        savePlayers(players);
+    }
+}
+function exportSave() {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) { alert('没有存档数据可导出。'); return; }
+    let players;
+    try { players = JSON.parse(raw); } catch (_) { alert('存档数据已损坏。'); return; }
+    const names = Object.keys(players);
+    if (names.length === 0) { alert('存档为空。'); return; }
+    if (!confirm(`将导出 ${names.join('、')} 的存档数据 (共 ${names.length} 位玩家)，是否继续？`)) return;
+    const dateStr = new Date().toISOString().slice(0,10);
+    const fileName = `tank_battle_save_${dateStr}.json`;
+    const blob = new Blob([raw], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fileName;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    const label = document.querySelector('.save-manage label');
+    const orig = label.textContent;
+    label.textContent = '✅ 导出成功';
+    setTimeout(() => { label.textContent = orig; }, 2000);
+}
+function importSave() {
+    if (!confirm('⚠️ 导入存档将覆盖当前所有本地存档数据，确定继续吗？')) return;
+    const input = document.getElementById('importFileInput');
+    const newInput = input.cloneNode(true);
+    input.parentNode.replaceChild(newInput, input);
+    const freshInput = document.getElementById('importFileInput');
+    freshInput.onchange = function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(ev) {
+            try {
+                const raw = ev.target.result;
+                const data = JSON.parse(raw);
+                if (typeof data !== 'object' || Array.isArray(data) || data === null) {
+                    alert('❌ 无效的存档文件：根数据必须是对象。');
+                    return;
+                }
+                const names = Object.keys(data);
+                if (names.length === 0) { alert('❌ 存档文件中没有玩家数据。'); return; }
+                for (const name of names) {
+                    const p = data[name];
+                    if (typeof p !== 'object' || p === null) { alert(`❌ 玩家 "${name}" 数据格式无效。`); return; }
+                    if (typeof p.highScore !== 'number') { alert(`❌ 玩家 "${name}" 缺少 highScore。`); return; }
+                    if (!Array.isArray(p.unlockedLevels)) { alert(`❌ 玩家 "${name}" 缺少 unlockedLevels。`); return; }
+                    if (p.coins !== undefined && typeof p.coins !== 'number') { alert(`❌ 玩家 "${name}" 的 coins 不是数字。`); return; }
+                    if (p.upgrades !== undefined) {
+                        if (typeof p.upgrades !== 'object' || Array.isArray(p.upgrades)) {
+                            alert(`❌ 玩家 "${name}" 的 upgrades 格式无效。`);
+                            return;
+                        }
+                        for (const key of ['hp','speed','attack','fireRate']) {
+                            if (p.upgrades[key] !== undefined && typeof p.upgrades[key] !== 'number') {
+                                alert(`❌ 玩家 "${name}" 的 upgrades.${key} 不是数字。`);
+                                return;
+                            }
+                        }
+                    }
+                    if (p.survivalData !== null) {
+                        if (typeof p.survivalData !== 'object' || Array.isArray(p.survivalData)) {
+                            alert(`❌ 玩家 "${name}" 的 survivalData 格式无效。`);
+                            return;
+                        }
+                        if (p.survivalData.day !== undefined && typeof p.survivalData.day !== 'number') {
+                            alert(`❌ 玩家 "${name}" 的 survivalData.day 不是数字。`);
+                            return;
+                        }
+                        if (p.survivalData.walls !== undefined && !Array.isArray(p.survivalData.walls)) {
+                            alert(`❌ 玩家 "${name}" 的 survivalData.walls 不是数组。`);
+                            return;
+                        }
+                        if (p.survivalData.placedWalls !== undefined && !Array.isArray(p.survivalData.placedWalls)) {
+                            alert(`❌ 玩家 "${name}" 的 survivalData.placedWalls 不是数组。`);
+                            return;
+                        }
+                    }
+                }
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+                alert(`✅ 成功导入 ${names.join('、')} 的存档数据 (共 ${names.length} 位玩家)！`);
+                if (currentPlayer) {
+                    const players = loadPlayers();
+                    if (players[currentPlayer]) {
+                        document.getElementById('displayHighScore').textContent = players[currentPlayer].highScore;
+                        document.getElementById('displayCoins').textContent = players[currentPlayer].coins || 0;
+                        updateUIAfterLogin();
+                        updateCoinDisplay();
+                    } else {
+                        alert(`当前玩家 "${currentPlayer}" 不在导入的存档中，已自动退出。`);
+                        logout();
+                        updateUIAfterLogin();
+                    }
+                }
+                if (document.getElementById('levelSelectScreen').style.display === 'flex') showLevelSelect();
+                freshInput.value = '';
+            } catch (err) { alert('❌ 导入失败：' + err.message); freshInput.value = ''; }
+        };
+        reader.onerror = function() { alert('❌ 读取文件失败。'); freshInput.value = ''; };
+        reader.readAsText(file, 'UTF-8');
+    };
+    freshInput.click();
+}
+
+// ---- 联机函数 ----
+function createRoom() {
+    if (peer) return;
+    isHost = true;
+    peer = new Peer({ debug: 2 });
+    peer.on('open', () => {
+        document.getElementById('roomIdInput').value = peer.id;
+        document.getElementById('onlineStatus').textContent = '🔗 等待队友...';
+        document.getElementById('onlineStatus').style.color = '#f39c12';
+        alert('房间已创建，房间号：' + peer.id + '，等待队友加入...');
+    });
+    peer.on('connection', (incomingConn) => {
+        conn = incomingConn;
+        conn.on('data', onReceiveData);
+        document.getElementById('onlineStatus').textContent = '🌐 已连接（主机）';
+        document.getElementById('onlineStatus').style.color = '#2ecc71';
+        alert('队友已连接！');
+        if (player && gameRunning) initRemotePlayer();
+    });
+    peer.on('error', (err) => {
+        alert('创建房间失败：' + err.message);
+        document.getElementById('onlineStatus').textContent = '❌ 错误';
+        document.getElementById('onlineStatus').style.color = '#e74c3c';
+    });
+}
+function joinRoom() {
+    const roomId = document.getElementById('roomIdInput').value.trim();
+    if (!roomId) return alert('请输入房间号');
+    if (peer) return;
+    isHost = false;
+    peer = new Peer({ debug: 2 });
+    peer.on('open', () => {
+        conn = peer.connect(roomId);
+        conn.on('open', () => {
+            document.getElementById('onlineStatus').textContent = '🌐 已连接（客户端）';
+            document.getElementById('onlineStatus').style.color = '#2ecc71';
+            alert('已连接到房间 ' + roomId);
+            conn.on('data', onReceiveData);
+            if (player && gameRunning) initRemotePlayer();
+        });
+        conn.on('error', (err) => {
+            alert('连接失败：' + err.message);
+            document.getElementById('onlineStatus').textContent = '❌ 连接失败';
+            document.getElementById('onlineStatus').style.color = '#e74c3c';
+        });
+    });
+    peer.on('error', (err) => alert('加入失败：' + err.message));
+}
+function initRemotePlayer() {
+    if (remotePlayer) return;
+    remotePlayer = new Tank(200, 200, 'remote');
+    remotePlayer.color = '#e74c3c';
+    remotePlayer.health = 5;
+    remotePlayer.maxHealth = 5;
+}
+function onReceiveData(data) {
+    if (!data) return;
+    switch (data.type) {
+        case 'move':
+            if (remotePlayer) {
+                remotePlayer.x = data.x;
+                remotePlayer.y = data.y;
+                remotePlayer.angle = data.angle;
+            }
+            break;
+        case 'fire':
+            if (remotePlayer && remotePlayer.health > 0) {
+                const speed = 7;
+                const vx = Math.cos(remotePlayer.angle) * speed;
+                const vy = Math.sin(remotePlayer.angle) * speed;
+                const bx = remotePlayer.x + 13 + Math.cos(remotePlayer.angle) * 20;
+                const by = remotePlayer.y + 13 + Math.sin(remotePlayer.angle) * 20;
+                const bullet = new Bullet(bx, by, vx, vy, 'ally', false, 1);
+                remoteBullets.push(bullet);
+            }
+            break;
+    }
+}
+function sendMove() {
+    if (!conn || !player || player.health <= 0) return;
+    sendMoveInterval++;
+    if (sendMoveInterval % 2 !== 0) return;
+    conn.send({ type: 'move', x: player.x, y: player.y, angle: player.angle });
+}
+function sendFire() {
+    if (!conn) return;
+    conn.send({ type: 'fire' });
+}
+function updateRemoteBullets() {
+    for (let i = remoteBullets.length - 1; i >= 0; i--) {
+        const b = remoteBullets[i];
+        b.update();
+        if (!b.active) remoteBullets.splice(i, 1);
+    }
+}
+function drawRemoteBullets() {
+    for (let b of remoteBullets) b.draw();
+}
+function disconnectPeer() {
+    if (conn) { conn.close(); conn = null; }
+    if (peer) { peer.destroy(); peer = null; }
+    isHost = false;
+    remotePlayer = null;
+    remoteBullets = [];
+    document.getElementById('onlineStatus').textContent = '🔌 未连接';
+    document.getElementById('onlineStatus').style.color = '#aaa';
+}
+function cleanupOnline() { disconnectPeer(); }
+
+// ---- 游戏核心逻辑 ----
+function handleTankDeath(tank) {
+    createParticles(tank.x + tank.width/2, tank.y + tank.height/2, tank.color, 15);
+    if (survivalMode) {
+        if (tank.type === 'enemy') {
+            enemyScore++;
+            addPlayerCoins(3);
+            const idx = survivalEnemies.indexOf(tank);
+            if (idx !== -1) survivalEnemies.splice(idx, 1);
+        } else if (tank.type === 'ally') allyScore++;
+        updateScore(); return;
+    }
+    if (tank.type === 'enemy') {
+        enemyScore++;
+        addPlayerCoins(5);
+        enemiesKilledThisLevel++;
+        if (enemiesKilledThisLevel >= totalEnemiesInLevel && !boss) levelComplete();
+    } else if (tank.type === 'ally') allyScore++;
+    if (tank === player) gameOver(false);
+    updateScore();
+}
+function handleBossDeath() {
+    createParticles(boss.x + boss.width/2, boss.y + boss.height/2, boss.color, 30);
+    enemyScore += 10;
+    addPlayerCoins(20);
+    boss = null;
+    levelComplete();
+    updateScore();
+}
+function initLevel(level) {
+    currentLevel = level;
+    document.getElementById('levelInfo').textContent = level === 10 ? '关卡 10 - BOSS战' : '关卡 ' + level;
+    const config = LEVEL_CONFIG.getConfig(level);
+    player = new Tank(50, GAME_HEIGHT - 80, 'player');
+    if (player.type === 'player') applyUpgradesToPlayer(player);
+    ally = new Tank(100, GAME_HEIGHT - 80, 'ally');
+    enemies = []; boss = null; bullets = []; particles = []; walls = []; items = [];
+    enemiesKilledThisLevel = 0;
+    for (let i = 0; i < config.wallCount; i++) spawnRandomWall();
+    if (config.isBossLevel) {
+        boss = new BossTank(GAME_WIDTH/2 - 26, 50);
+        totalEnemiesInLevel = 1;
+    } else {
+        for (let i = 0; i < config.enemyCount; i++) {
+            let x, y, attempts = 0;
+            do {
+                x = Math.random() * (GAME_WIDTH - 30);
+                y = Math.random() * (GAME_HEIGHT / 2 - 30);
+                attempts++;
+            } while (attempts < 50 && isPositionOccupied(x, y, 30, 30));
+            if (attempts < 50) enemies.push(new Tank(x, y, 'enemy'));
+        }
+        totalEnemiesInLevel = config.enemyCount;
+    }
+    if (conn && !remotePlayer) initRemotePlayer();
+    updateScore();
+    updateCoinDisplay();
+}
+function updateAllyAI() {
+    if (!ally || ally.health <= 0) return;
+    let target = null, minDist = Infinity;
+    for (let enemy of enemies) {
+        if (enemy.health > 0) {
+            const dist = Math.sqrt((enemy.x - ally.x)**2 + (enemy.y - ally.y)**2);
+            if (dist < minDist) { minDist = dist; target = enemy; }
+        }
+    }
+    if (survivalMode) {
+        for (let enemy of survivalEnemies) {
+            if (enemy.health > 0) {
+                const dist = Math.sqrt((enemy.x - ally.x)**2 + (enemy.y - ally.y)**2);
+                if (dist < minDist) { minDist = dist; target = enemy; }
+            }
+        }
+    }
+    if (boss) {
+        const dist = Math.sqrt((boss.x - ally.x)**2 + (boss.y - ally.y)**2);
+        if (dist < minDist) { minDist = dist; target = boss; }
+    }
+    if (target) {
+        const dx = target.x - ally.x, dy = target.y - ally.y;
+        if (Math.abs(dx) > Math.abs(dy)) {
+            ally.move(dx > 0 ? 1 : -1, 0);
+            ally.direction = dx > 0 ? DIRECTIONS.RIGHT : DIRECTIONS.LEFT;
+        } else {
+            ally.move(0, dy > 0 ? 1 : -1);
+            ally.direction = dy > 0 ? DIRECTIONS.DOWN : DIRECTIONS.UP;
+        }
+        if (minDist < 150 && Math.random() < 0.08) ally.fire();
+    }
+}
+function updateEnemyAI() {
+    for (let enemy of enemies) {
+        if (enemy.health <= 0) continue;
+        if (!enemy.moveTimer) enemy.moveTimer = 0;
+        if (!enemy.moveDir) enemy.moveDir = { dx: 0, dy: 0 };
+        enemy.moveTimer--;
+        if (enemy.moveTimer <= 0) {
+            enemy.moveDir = { dx: Math.floor(Math.random() * 3) - 1, dy: Math.floor(Math.random() * 3) - 1 };
+            enemy.moveTimer = 30 + Math.floor(Math.random() * 60);
+        }
+        if (enemy.moveDir.dx !== 0 || enemy.moveDir.dy !== 0) {
+            enemy.move(enemy.moveDir.dx, enemy.moveDir.dy);
+            if (Math.abs(enemy.moveDir.dx) > Math.abs(enemy.moveDir.dy)) enemy.direction = enemy.moveDir.dx > 0 ? DIRECTIONS.RIGHT : DIRECTIONS.LEFT;
+            else if (enemy.moveDir.dy !== 0) enemy.direction = enemy.moveDir.dy > 0 ? DIRECTIONS.DOWN : DIRECTIONS.UP;
+        }
+        if (Math.random() < 0.02) enemy.fire();
+    }
+}
+function updateScore() {
+    document.getElementById('playerScore').textContent = playerScore;
+    document.getElementById('allyScore').textContent = allyScore;
+    document.getElementById('enemyScore').textContent = enemyScore;
+}
+
+// ---- 主游戏循环（整合背景和小地图） ----
+function gameLoop() {
+    if (!gameRunning) return;
+    // 绘制背景
+    if (survivalMode) {
+        drawSurvivalBackground();
+    } else {
+        drawBackground();
+    }
+
+    // ---- 以下为原有绘制内容 ----
+    for (let wall of walls) { wall.update(); wall.draw(); }
+    for (let i = items.length - 1; i >= 0; i--) {
+        if (!items[i].update()) { items.splice(i, 1); continue; }
+        items[i].draw();
+        if (player && items[i].checkCollision(player)) {
+            if (items[i].type === 'HEALTH') player.heal(2);
+            else player.activateShield(300);
+            items.splice(i, 1);
+        } else if (ally && items[i].checkCollision(ally)) {
+            if (items[i].type === 'HEALTH') ally.heal(2);
+            else ally.activateShield(300);
+            items.splice(i, 1);
+        }
+    }
+
+    // 自动瞄准
+    if (autoAimEnabled && player && player.health > 0) {
+        let target = null, minDist = Infinity;
+        let allEnemies = [...enemies];
+        if (survivalMode) allEnemies = allEnemies.concat(survivalEnemies);
+        if (boss && boss.health > 0) allEnemies.push(boss);
+        for (let e of allEnemies) {
+            if (e.health > 0) {
+                const dx = e.x - player.x, dy = e.y - player.y;
+                const dist = dx*dx + dy*dy;
+                if (dist < minDist) { minDist = dist; target = e; }
+            }
+        }
+        if (target) {
+            player.angle = Math.atan2(target.y - player.y, target.x - player.x);
+            if (player.cooldown <= 0) player.fire();
+        }
+    }
+
+    if (player && player.health > 0) {
+        let dx = 0, dy = 0;
+        if (keys.joystickX !== undefined && (keys.joystickX !== 0 || keys.joystickY !== 0)) {
+            dx = keys.joystickX; dy = keys.joystickY;
+        } else {
+            if (keys.up) dy = -1;
+            if (keys.down) dy = 1;
+            if (keys.left) dx = -1;
+            if (keys.right) dx = 1;
+        }
+        if (dx !== 0 || dy !== 0) {
+            player.move(dx, dy);
+            sendMove();
+        }
+        player.update();
+        player.draw();
+    }
+
+    if (ally && ally.health > 0) {
+        updateAllyAI();
+        ally.update();
+        ally.draw();
+    }
+
+    updateEnemyAI();
+    for (let enemy of enemies) {
+        if (enemy.health > 0) { enemy.update(); enemy.draw(); }
+    }
+    if (boss) { boss.applyPush(); boss.update(); boss.draw(); }
+
+    for (let bullet of bullets) { bullet.update(); bullet.draw(); }
+    bullets = bullets.filter(b => b.active);
+
+    if (remotePlayer && remotePlayer.health > 0) {
+        remotePlayer.draw();
+    }
+    updateRemoteBullets();
+    drawRemoteBullets();
+
+    updateParticles();
+    drawParticles();
+
+    // ---- 绘制小地图（最后，确保在最上层） ----
+    if (survivalMode) {
+        drawMiniMap();
+    }
+
+    if (player && player.health <= 0) gameOver(false);
+    requestAnimationFrame(gameLoop);
+}
+
+// ---- 关卡控制 ----
+function levelComplete() {
+    gameRunning = false;
+    unlockLevel(currentLevel + 1);
+    addPlayerCoins(20);
+    updateHighScore(playerScore);
+    document.getElementById('levelStats').innerHTML = '<p>关卡 ' + currentLevel + ' 完成!</p><p>本关击杀: ' + enemiesKilledThisLevel + '</p><p>总分数 - 玩家: ' + playerScore + ' | 队友: ' + allyScore + ' | 敌人: ' + enemyScore + '</p>' + (currentPlayer ? '<p>玩家: ' + currentPlayer + '</p>' : '');
+    document.getElementById('levelCompleteScreen').style.display = 'flex';
+    updateCoinDisplay();
+}
+function nextLevel() {
+    document.getElementById('levelCompleteScreen').style.display = 'none';
+    if (currentLevel < maxLevel) {
+        initLevel(currentLevel + 1);
+        gameRunning = true;
+        gameLoop();
+    } else {
+        gameOver(true);
+    }
+}
+function gameOver(victory) {
+    gameRunning = false;
+    updateHighScore(playerScore);
+    let statsHtml = '<p>最终关卡: ' + currentLevel + '</p><p>玩家分数: ' + playerScore + '</p><p>队友分数: ' + allyScore + '</p><p>敌人分数: ' + enemyScore + '</p>';
+    if (currentPlayer) {
+        const players = loadPlayers();
+        statsHtml += '<p>玩家: ' + currentPlayer + '</p><p>历史最高分: ' + players[currentPlayer].highScore + '</p>';
+    }
+    document.getElementById('gameOverTitle').textContent = victory ? '🎉 通关胜利!' : '💀 游戏结束';
+    document.getElementById('finalStats').innerHTML = statsHtml;
+    document.getElementById('gameOverScreen').style.display = 'flex';
+    cleanupOnline();
+}
+function restartGame() {
+    document.getElementById('gameOverScreen').style.display = 'none';
+    playerScore = 0; allyScore = 0; enemyScore = 0;
+    initLevel(currentLevel);
+    gameRunning = true;
+    gameLoop();
+}
+function showLevelSelect() {
+    if (gameRunning) gameRunning = false;
+    document.getElementById('startScreen').style.display = 'none';
+    document.getElementById('gameOverScreen').style.display = 'none';
+    document.getElementById('levelCompleteScreen').style.display = 'none';
+    const selectScreen = document.getElementById('levelSelectScreen');
+    selectScreen.style.display = 'flex';
+    const grid = document.getElementById('levelGrid');
+    grid.innerHTML = '';
+    const unlocked = getUnlockedLevels();
+    const unlockedSet = new Set(Array.isArray(unlocked) ? unlocked : [1]);
+    for (let i = 1; i <= 10; i++) {
+        const btn = document.createElement('button');
+        btn.className = 'level-btn' + (i === 10 ? ' boss' : '');
+        btn.textContent = i === 10 ? 'BOSS' : i;
+        if (!unlockedSet.has(i)) {
+            btn.className += ' locked';
+            btn.style.opacity = '0.5';
+            btn.style.cursor = 'not-allowed';
+            btn.disabled = true;
+        } else {
+            btn.onclick = (function(lvl) { return function() { startLevel(lvl); }; })(i);
+        }
+        grid.appendChild(btn);
+    }
+}
+function backToStart() {
+    document.getElementById('levelSelectScreen').style.display = 'none';
+    document.getElementById('startScreen').style.display = 'flex';
+}
+function startLevel(level) {
+    document.getElementById('levelSelectScreen').style.display = 'none';
+    document.getElementById('startScreen').style.display = 'none';
+    playerScore = 0; allyScore = 0; enemyScore = 0;
+    initLevel(level);
+    gameRunning = true;
+    gameLoop();
+}
+
+// ---- 点击地图放置障碍物（吸附网格） ----
+function getCanvasCoords(e) {
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+    const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+    if (clientX === undefined) return null;
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+}
+function onCanvasClick(e) {
+    if (!survivalMode || backpackBlocks <= 0) return;
+    const coords = getCanvasCoords(e);
+    if (!coords) return;
+    const worldX = coords.x + cameraX;
+    const worldY = coords.y + cameraY;
+    placeWallAt(worldX, worldY);
+}
+function onCanvasTouch(e) {
+    if (!survivalMode || backpackBlocks <= 0) return;
+    e.preventDefault();
+    const coords = getCanvasCoords(e);
+    if (!coords) return;
+    const worldX = coords.x + cameraX;
+    const worldY = coords.y + cameraY;
+    placeWallAt(worldX, worldY);
+}
+function placeWallAt(worldX, worldY) {
+    // 吸附到网格
+    const gridX = Math.round(worldX / GRID_SIZE) * GRID_SIZE;
+    const gridY = Math.round(worldY / GRID_SIZE) * GRID_SIZE;
+
+    // 边界检查（确保完全在地图内）
+    if (gridX < 0 || gridX + GRID_SIZE > SURVIVAL_WIDTH || 
+        gridY < 0 || gridY + GRID_SIZE > SURVIVAL_HEIGHT) {
+        alert('位置超出地图边界！');
+        return;
+    }
+
+    const newWall = new PlacedWall(gridX, gridY);
+    // 检测是否与现有放置墙或堡垒墙重叠
+    let occupied = false;
+    for (let w of placedWalls) {
+        if (newWall.checkCollision(w)) { occupied = true; break; }
+    }
+    if (!occupied) {
+        for (let w of fortressWalls) {
+            if (newWall.checkCollision(w)) { occupied = true; break; }
+        }
+    }
+    // 检测是否与坦克重叠（避免堵死玩家或敌人）
+    if (!occupied) {
+        const allTanks = [player, ally, ...survivalEnemies].filter(t => t && t.health > 0);
+        for (let tank of allTanks) {
+            if (newWall.checkCollision(tank)) { occupied = true; break; }
+        }
+    }
+    if (occupied) {
+        alert('该网格位置已被占据！');
+        return;
+    }
+
+    placedWalls.push(newWall);
+    backpackBlocks--;
+    updateBackpackUI();
+    // 放置成功粒子
+    createParticles(gridX + GRID_SIZE/2, gridY + GRID_SIZE/2, '#8B7355', 8);
+}
+function showPlaceHint() {
+    if (survivalMode) {
+        alert('点击地图任意位置，障碍物会自动吸附到网格（32×32）并放置（消耗1个背包资源）');
+    } else {
+        alert('仅在生存模式中可用');
+    }
+}
+
+// ---- 自动瞄准切换 ----
+function toggleAutoAim() {
+    autoAimEnabled = !autoAimEnabled;
+    const btn = document.getElementById('autoAimBtn');
+    if (autoAimEnabled) {
+        btn.classList.remove('off');
+        btn.style.background = '#2ecc71';
+        btn.textContent = '🎯';
+    } else {
+        btn.classList.add('off');
+        btn.style.background = '#555';
+        btn.textContent = '🎯';
+    }
+}
+
+// ---- 键盘/摇杆 ----
+document.addEventListener('keydown', function(e) {
+    switch(e.key) {
+        case 'ArrowUp': case 'w': case 'W': keys.up = true; break;
+        case 'ArrowDown': case 's': case 'S': keys.down = true; break;
+        case 'ArrowLeft': case 'a': case 'A': keys.left = true; break;
+        case 'ArrowRight': case 'd': case 'D': keys.right = true; break;
+        case ' ': case 'Enter': if (player && player.health > 0) player.fire(); break;
+    }
+});
+document.addEventListener('keyup', function(e) {
+    switch(e.key) {
+        case 'ArrowUp': case 'w': case 'W': keys.up = false; break;
+        case 'ArrowDown': case 's': case 'S': keys.down = false; break;
+        case 'ArrowLeft': case 'a': case 'A': keys.left = false; break;
+        case 'ArrowRight': case 'd': case 'D': keys.right = false; break;
+    }
+});
+
+const joystick = document.getElementById('joystick');
+const joystickKnob = document.getElementById('joystickKnob');
+const btnFire = document.getElementById('btnFire');
+let joystickActive = false;
+
+function updateJoystick(e) {
+    const rect = joystick.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const maxDist = 30;
+    let clientX, clientY;
+    if (e.touches && e.touches.length > 0) { clientX = e.touches[0].clientX; clientY = e.touches[0].clientY; }
+    else { clientX = e.clientX; clientY = e.clientY; }
+    const dx = clientX - centerX;
+    const dy = clientY - centerY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const clampedDist = Math.min(dist, maxDist);
+    const angle = Math.atan2(dy, dx);
+    const knobX = Math.cos(angle) * clampedDist;
+    const knobY = Math.sin(angle) * clampedDist;
+    joystickKnob.style.left = (30 + knobX) + 'px';
+    joystickKnob.style.top = (30 + knobY) + 'px';
+    keys.joystickX = knobX / maxDist;
+    keys.joystickY = knobY / maxDist;
+}
+joystick.addEventListener('touchstart', function(e) { e.preventDefault(); joystickActive = true; updateJoystick(e); });
+joystick.addEventListener('touchmove', function(e) { e.preventDefault(); if (joystickActive) updateJoystick(e); });
+joystick.addEventListener('touchend', function(e) { e.preventDefault(); joystickActive = false; joystickKnob.style.left = '30px'; joystickKnob.style.top = '30px'; keys.joystickX = 0; keys.joystickY = 0; keys.up = keys.down = keys.left = keys.right = false; });
+joystick.addEventListener('mousedown', function(e) { joystickActive = true; updateJoystick(e); });
+document.addEventListener('mousemove', function(e) { if (joystickActive) updateJoystick(e); });
+document.addEventListener('mouseup', function() { joystickActive = false; joystickKnob.style.left = '30px'; joystickKnob.style.top = '30px'; keys.joystickX = 0; keys.joystickY = 0; keys.up = keys.down = keys.left = keys.right = false; });
+btnFire.addEventListener('touchstart', function(e) { e.preventDefault(); if (player && player.health > 0) player.fire(); btnFire.classList.add('active'); });
+btnFire.addEventListener('touchend', function(e) { e.preventDefault(); btnFire.classList.remove('active'); });
+btnFire.addEventListener('mousedown', function() { if (player && player.health > 0) player.fire(); btnFire.classList.add('active'); });
+btnFire.addEventListener('mouseup', function() { btnFire.classList.remove('active'); });
+
+// ---- 生存模式 ----
+function startSurvivalMode() {
+    if (!isSurvivalUnlocked()) { alert('通关第10关解锁生存模式！'); return; }
+    survivalMode = true;
+    survivalDay = 1;
+    survivalTime = 0;
+    isNight = false;
+    document.getElementById('startScreen').style.display = 'none';
+    document.getElementById('gameOverScreen').style.display = 'none';
+    document.getElementById('survivalExitBtn').style.display = 'block';
+    initSurvivalGame();
+    gameRunning = true;
+    gameLoopSurvival();
+}
+function exitSurvivalMode() {
+    if (!confirm('确定退出生存模式吗？进度将自动保存。')) return;
+    saveSurvivalData();
+    survivalGameOver(false);
+}
+function initSurvivalGame() {
+    player = new Tank(SURVIVAL_WIDTH / 2 - 16, SURVIVAL_HEIGHT / 2 - 16, 'player');
+    applyUpgradesToPlayer(player);
+    ally = new Tank(SURVIVAL_WIDTH / 2 + 50, SURVIVAL_HEIGHT / 2, 'ally');
+    fortressWalls = [];
+    placedWalls = [];
+    survivalEnemies = [];
+    bullets = [];
+    particles = [];
+    items = [];
+    backpackBlocks = 0;
+    playerScore = 0;
+    updateScore();
+    loadSurvivalData();
+    document.getElementById('backpackBtn').style.display = 'block';
+    generateSurvivalResources();
+    updateBackpackUI();
+    if (conn && !remotePlayer) initRemotePlayer();
+}
+function generateSurvivalResources() {
+    survivalResources = [];
+    for (let i = 0; i < 6; i++) {
+        let attempts = 0;
+        let x, y, overlap;
+        do {
+            x = 50 + Math.random() * (SURVIVAL_WIDTH - 100);
+            y = 50 + Math.random() * (SURVIVAL_HEIGHT - 100);
+            overlap = false;
+            for (let res of survivalResources) {
+                if (Math.abs(res.x - x) < 60 && Math.abs(res.y - y) < 60) { overlap = true; break; }
+            }
+            attempts++;
+        } while (overlap && attempts < 20);
+        survivalResources.push({ x, y, collected: false, cooldown: 0 });
+    }
+}
+function updateBackpackUI() {
+    document.getElementById('backpackBtn').textContent = '📦 ' + backpackBlocks;
+}
+function updateCamera() {
+    if (!player) return;
+    cameraX = player.x - GAME_WIDTH / 2;
+    cameraY = player.y - GAME_HEIGHT / 2;
+    cameraX = Math.max(0, Math.min(cameraX, SURVIVAL_WIDTH - GAME_WIDTH));
+    cameraY = Math.max(0, Math.min(cameraY, SURVIVAL_HEIGHT - GAME_HEIGHT));
+}
+function loadSurvivalData() {
+    if (!currentPlayer) return;
+    const players = loadPlayers();
+    if (players[currentPlayer] && players[currentPlayer].survivalData) {
+        const data = players[currentPlayer].survivalData;
+        survivalDay = data.day || 1;
+        fortressWalls = (data.walls || []).map(w => new Wall(w.x, w.y, true));
+        if (data.placedWalls) {
+            placedWalls = data.placedWalls.map(w => new PlacedWall(w.x, w.y, w.health || 10));
+        }
+    }
+}
+function saveSurvivalData() {
+    if (!currentPlayer) return;
+    const players = loadPlayers();
+    if (!players[currentPlayer].survivalData) players[currentPlayer].survivalData = {};
+    const data = players[currentPlayer].survivalData;
+    data.day = survivalDay;
+    data.walls = fortressWalls.map(w => ({ x: w.x, y: w.y }));
+    data.placedWalls = placedWalls.map(w => ({ x: w.x, y: w.y, health: w.health }));
+    savePlayers(players);
+}
+
+// 生存模式游戏循环（整合背景、小地图、资源冷却）
+function gameLoopSurvival() {
+    if (!gameRunning || !survivalMode) return;
+    updateCamera();
+    drawSurvivalBackground();
+
+    ctx.save();
+    ctx.translate(-cameraX, -cameraY);
+
+    // 更新资源矿点冷却
+    for (let res of survivalResources) {
+        if (res.collected) {
+            res.cooldown--;
+            if (res.cooldown <= 0) {
+                res.collected = false;
+                res.cooldown = 0;
+            }
+        }
+    }
+
+    // 绘制资源矿点（闪烁）
+    for (let res of survivalResources) {
+        if (!res.collected) {
+            const blink = 0.6 + 0.4 * Math.sin(Date.now() / 300 + res.x);
+            ctx.globalAlpha = blink;
+            ctx.fillStyle = '#f1c40f';
+            ctx.shadowColor = '#f1c40f';
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.arc(res.x + 10, res.y + 10, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.globalAlpha = 1;
+            if (player) {
+                const dx = player.x - res.x;
+                const dy = player.y - res.y;
+                if (dx*dx + dy*dy < 40*40 && player.health > 0) {
+                    res.collected = true;
+                    res.cooldown = 1800;
+                    backpackBlocks++;
+                    updateBackpackUI();
+                    playerScore += 5;
+                    updateScore();
+                    createParticles(res.x + 10, res.y + 10, '#f1c40f', 12);
+                }
+            }
+        }
+    }
+
+    survivalTime++;
+    const dayDuration = 3600, nightDuration = 1800;
+    const totalCycle = dayDuration + nightDuration;
+    const cycleTime = survivalTime % totalCycle;
+    isNight = cycleTime >= dayDuration;
+
+    if (isNight) {
+        survivalSpawnTimer++;
+        const spawnRate = Math.max(60, 300 - survivalDay * 20);
+        if (survivalSpawnTimer >= spawnRate) {
+            survivalSpawnTimer = 0;
+            spawnSurvivalEnemy();
+        }
+    }
+    if (survivalTime > 0 && survivalTime % totalCycle === 0) {
+        survivalDay++;
+        saveSurvivalData();
+    }
+
+    fortressWalls.forEach(wall => wall.draw());
+    placedWalls.forEach(wall => wall.draw());
+    walls = [];
+
+    if (autoAimEnabled && player && player.health > 0) {
+        let target = null, minDist = Infinity;
+        let allEnemies = [...survivalEnemies];
+        if (boss && boss.health > 0) allEnemies.push(boss);
+        for (let e of allEnemies) {
+            if (e.health > 0) {
+                const dx = e.x - player.x, dy = e.y - player.y;
+                const dist = dx*dx + dy*dy;
+                if (dist < minDist) { minDist = dist; target = e; }
+            }
+        }
+        if (target) {
+            player.angle = Math.atan2(target.y - player.y, target.x - player.x);
+            if (player.cooldown <= 0) player.fire();
+        }
+    }
+
+    if (player && player.health > 0) {
+        let dx = 0, dy = 0;
+        if (keys.joystickX !== undefined && (keys.joystickX !== 0 || keys.joystickY !== 0)) {
+            dx = keys.joystickX; dy = keys.joystickY;
+        } else {
+            if (keys.up) dy = -1;
+            if (keys.down) dy = 1;
+            if (keys.left) dx = -1;
+            if (keys.right) dx = 1;
+        }
+        if (dx !== 0 || dy !== 0) {
+            player.move(dx, dy);
+            sendMove();
+        }
+        player.update();
+        player.draw();
+    }
+
+    if (ally && ally.health > 0) {
+        updateAllyAI();
+        ally.update();
+        ally.draw();
+    }
+
+    updateSurvivalEnemyAI();
+    survivalEnemies.forEach(enemy => {
+        if (enemy.health > 0) { enemy.update(); enemy.draw(); }
+    });
+
+    for (let bullet of bullets) { bullet.update(); bullet.draw(); }
+    bullets = bullets.filter(b => b.active);
+
+    if (remotePlayer && remotePlayer.health > 0) remotePlayer.draw();
+    updateRemoteBullets();
+    drawRemoteBullets();
+
+    updateParticles();
+    drawParticles();
+
+    ctx.fillStyle = isNight ? '#e74c3c' : '#f39c12';
+    ctx.font = 'bold 16px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('第' + survivalDay + '天 ' + (isNight ? '🌙 夜晚' : '☀️ 白天'), cameraX + 10, cameraY + 25);
+
+    ctx.restore();
+
+    // 绘制小地图
+    drawMiniMap();
+
+    if (player && player.health <= 0) {
+        survivalGameOver(true);
+        return;
+    }
+    requestAnimationFrame(gameLoopSurvival);
+}
+
+function spawnSurvivalEnemy() {
+    const edge = Math.floor(Math.random() * 4);
+    let x, y, spawnOffset = 100, attempts = 0;
+    do {
+        switch(edge) {
+            case 0: x = cameraX + Math.random() * GAME_WIDTH; y = cameraY - spawnOffset; break;
+            case 1: x = cameraX + GAME_WIDTH + spawnOffset; y = cameraY + Math.random() * GAME_HEIGHT; break;
+            case 2: x = cameraX + Math.random() * GAME_WIDTH; y = cameraY + GAME_HEIGHT + spawnOffset; break;
+            case 3: x = cameraX - spawnOffset; y = cameraY + Math.random() * GAME_HEIGHT; break;
+        }
+        x = Math.max(0, Math.min(x, SURVIVAL_WIDTH - 32));
+        y = Math.max(0, Math.min(y, SURVIVAL_HEIGHT - 32));
+        attempts++;
+    } while (attempts < 10 && isPositionOccupiedSurvival(x, y, 32, 32));
+    if (attempts >= 10) return;
+    const enemy = new Tank(x, y, 'enemy');
+    enemy.health = 2 + Math.floor(survivalDay / 3);
+    enemy.maxHealth = enemy.health;
+    survivalEnemies.push(enemy);
+}
+
+function isPositionOccupiedSurvival(x, y, w, h) {
+    const allWalls = [...placedWalls, ...fortressWalls];
+    for (let wall of allWalls) {
+        if (x < wall.x + wall.width && x + w > wall.x && y < wall.y + wall.height && y + h > wall.y) return true;
+    }
+    if (player && x < player.x + player.width + 50 && x + w > player.x - 50 &&
+        y < player.y + player.height + 50 && y + h > player.y - 50) return true;
+    if (ally && x < ally.x + ally.width + 50 && x + w > ally.x - 50 &&
+        y < ally.y + ally.height + 50 && y + h > ally.y - 50) return true;
+    return false;
+}
+
+function updateSurvivalEnemyAI() {
+    for (let enemy of survivalEnemies) {
+        if (enemy.health <= 0) continue;
+        let target = player && player.health > 0 ? player : (ally && ally.health > 0 ? ally : null);
+        if (!target) continue;
+        const dx = target.x - enemy.x, dy = target.y - enemy.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > 30) enemy.move(dx / dist, dy / dist);
+        if (Math.random() < 0.02) enemy.fire();
+    }
+}
+
+function survivalGameOver(wasKilled) {
+    gameRunning = false;
+    survivalMode = false;
+    document.getElementById('backpackBtn').style.display = 'none';
+    document.getElementById('survivalExitBtn').style.display = 'none';
+    if (!wasKilled) { /* 已保存 */ }
+    updateHighScore(playerScore);
+    let statsHtml = '<p>生存天数: ' + survivalDay + '</p><p>玩家分数: ' + playerScore + '</p>';
+    if (currentPlayer) {
+        const players = loadPlayers();
+        statsHtml += '<p>玩家: ' + currentPlayer + '</p><p>历史最高分: ' + players[currentPlayer].highScore + '</p>';
+    }
+    document.getElementById('gameOverTitle').textContent = wasKilled ? '💀 生存结束' : '⏹ 已退出生存模式';
+    document.getElementById('finalStats').innerHTML = statsHtml;
+    document.getElementById('gameOverScreen').style.display = 'flex';
+    cleanupOnline();
+}
+
+// ---- 启动 ----
+document.addEventListener('DOMContentLoaded', function() {
+    const loginBtn = document.getElementById('loginBtn');
+    if (loginBtn) {
+        loginBtn.addEventListener('click', function(e) { e.preventDefault(); login(); });
+        loginBtn.addEventListener('touchstart', function(e) { /* 增强响应 */ });
+    }
+    const nameInput = document.getElementById('playerNameInput');
+    if (nameInput) {
+        nameInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); login(); }
+        });
+    }
+    const autoBtn = document.getElementById('autoAimBtn');
+    if (autoBtn) {
+        autoBtn.addEventListener('click', toggleAutoAim);
+        autoBtn.addEventListener('touchstart', function(e) { e.preventDefault(); toggleAutoAim(); });
+    }
+    canvas.addEventListener('click', onCanvasClick);
+    canvas.addEventListener('touchstart', onCanvasTouch, { passive: false });
+});
+
+const originalWallDraw = Wall.prototype.draw;
+Wall.prototype.draw = function() {
+    if (this.isFortress) {
+        ctx.fillStyle = 'rgba(149, 165, 166, 0.5)';
+        ctx.strokeStyle = '#7f8c8d';
+        ctx.lineWidth = 2;
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+        ctx.strokeRect(this.x, this.y, this.width, this.height);
+    } else {
+        originalWallDraw.call(this);
+    }
+};
+const originalCheckRectCollision = Tank.prototype.checkRectCollision;
+Tank.prototype.checkRectCollision = function(x, y, obj) {
+    if (obj.isFortress && this.type === 'player') return false;
+    return originalCheckRectCollision.call(this, x, y, obj);
+};
+
+document.getElementById('startScreen').style.display = 'flex';
+</script>
+</body>
+</html>
